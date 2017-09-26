@@ -325,6 +325,8 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
       return md;
     }
 
+    md.setSeasonNumber(episode.season);
+    md.setEpisodeNumber(episode.episode);
     String title = episode.titles.get(langu);
     if (StringUtils.isBlank(title)) {
       title = episode.titles.get("en");
