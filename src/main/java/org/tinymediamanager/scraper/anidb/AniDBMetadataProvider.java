@@ -15,6 +15,7 @@
  */
 package org.tinymediamanager.scraper.anidb;
 
+import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -33,7 +34,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.parser.Parser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.tinymediamanager.scraper.MediaMetadata;
@@ -48,10 +48,8 @@ import org.tinymediamanager.scraper.entities.MediaCastMember.CastType;
 import org.tinymediamanager.scraper.entities.MediaEpisode;
 import org.tinymediamanager.scraper.entities.MediaGenres;
 import org.tinymediamanager.scraper.entities.MediaType;
-import org.tinymediamanager.scraper.http.CachedUrl;
 import org.tinymediamanager.scraper.mediaprovider.IMediaArtworkProvider;
 import org.tinymediamanager.scraper.mediaprovider.ITvShowMetadataProvider;
-import org.tinymediamanager.scraper.util.RingBuffer;
 import org.tinymediamanager.scraper.util.Similarity;
 import org.tinymediamanager.scraper.util.StrgUtils;
 
@@ -66,8 +64,9 @@ import net.xeoh.plugins.base.annotations.PluginImplementation;
 public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArtworkProvider {
   private static final Logger              LOGGER            = LoggerFactory.getLogger(AniDBMetadataProvider.class);
   private static final String              IMAGE_SERVER      = "http://img7.anidb.net/pics/anime/";
-  private static final RingBuffer<Long>    connectionCounter = new RingBuffer<>(2);
   private static MediaProviderInfo         providerInfo      = createMediaProviderInfo();
+  // @TODO: We should use tinyMediaManager's cache folder. How to get it?
+  private static AniDBCachedUrl            aniDBCachedUrl    = new AniDBCachedUrl(new File(System.getProperty("java.io.tmpdir")));
 
   private HashMap<String, List<AniDBShow>> showsForLookup    = new HashMap<>();
 
@@ -124,11 +123,7 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
     // http://api.anidb.net:9001/httpapi?request=anime&client=tinymediamanager&clientver=2&protover=1&aid=4242
     Document doc = null;
     try {
-      CachedUrl cachedUrl = new CachedUrl("http://api.anidb.net:9001/httpapi?request=anime&client=tinymediamanager&clientver=2&protover=1&aid=" + id);
-      if (!cachedUrl.isCached()) {
-        trackConnections();
-      }
-      doc = Jsoup.parse(cachedUrl.getInputStream(), "UTF-8", "", Parser.xmlParser());
+      doc = aniDBCachedUrl.getXmlContents("http://api.anidb.net:9001/httpapi?request=anime&client=tinymediamanager&clientver=2&protover=1&aid=" + id);
     }
     catch (Exception e) {
       LOGGER.error("failed to get TV show metadata: " + e.getMessage());
@@ -294,11 +289,7 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
 
     Document doc = null;
     try {
-      CachedUrl url = new CachedUrl("http://api.anidb.net:9001/httpapi?request=anime&client=tinymediamanager&clientver=2&protover=1&aid=" + id);
-      if (!url.isCached()) {
-        trackConnections();
-      }
-      doc = Jsoup.parse(url.getInputStream(), "UTF-8", "", Parser.xmlParser());
+      doc = aniDBCachedUrl.getXmlContents("http://api.anidb.net:9001/httpapi?request=anime&client=tinymediamanager&clientver=2&protover=1&aid=" + id);
     }
     catch (Exception e) {
       LOGGER.error("failed to get episode metadata: " + e.getMessage());
@@ -515,11 +506,7 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
 
     Document doc = null;
     try {
-      CachedUrl url = new CachedUrl("http://api.anidb.net:9001/httpapi?request=anime&client=tinymediamanager&clientver=2&protover=1&aid=" + id);
-      if (!url.isCached()) {
-        trackConnections();
-      }
-      doc = Jsoup.parse(url.getInputStream(), "UTF-8", "", Parser.xmlParser());
+      doc = aniDBCachedUrl.getXmlContents("http://api.anidb.net:9001/httpapi?request=anime&client=tinymediamanager&clientver=2&protover=1&aid=" + id);
     }
     catch (Exception e) {
       LOGGER.error("error getting episode list: " + e.getMessage());
@@ -562,14 +549,10 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
     Pattern pattern = Pattern.compile("^(?!#)(\\d+)[|](\\d)[|]([\\w-]+)[|](.+)$");
     Scanner scanner = null;
     try {
-      CachedUrl animeList = new CachedUrl("http://anidb.net/api/anime-titles.dat.gz");
-      if (!animeList.isCached()) {
-        trackConnections();
-      }
       // scanner = new Scanner(new GZIPInputStream(animeList.getInputStream()));
       // DecompressingHttpClient is decompressing the gz from animedb due to
       // wrong http-server configuration
-      scanner = new Scanner(animeList.getInputStream(), "UTF-8");
+      scanner = new Scanner(aniDBCachedUrl.getStringContents("http://anidb.net/api/anime-titles.dat.gz"));
       while (scanner.hasNextLine()) {
         Matcher matcher = pattern.matcher(scanner.nextLine());
 
@@ -589,10 +572,7 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
         }
       }
     }
-    catch (InterruptedException e) {
-      LOGGER.warn("interrupted image download");
-    }
-    catch (IOException e) {
+    catch (Exception e) {
       LOGGER.error("error getting AniDB index");
     }
     finally {
@@ -604,28 +584,6 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
         }
       }
     }
-  }
-
-  /*
-   * Track connections and throttle if needed.
-   */
-  private synchronized static void trackConnections() {
-    Long currentTime = System.currentTimeMillis();
-    if (connectionCounter.count() == connectionCounter.maxSize()) {
-      Long oldestConnection = connectionCounter.getTailItem();
-      if (oldestConnection > (currentTime - 4000)) {
-        LOGGER.debug("connection limit reached, throttling " + connectionCounter);
-        try {
-          Thread.sleep(5000 - (currentTime - oldestConnection));
-        }
-        catch (InterruptedException e) {
-          LOGGER.warn(e.getMessage());
-        }
-      }
-    }
-
-    currentTime = System.currentTimeMillis();
-    connectionCounter.add(currentTime);
   }
 
   @Override
