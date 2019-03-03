@@ -16,7 +16,6 @@
 package org.tinymediamanager.scraper.anidb;
 
 import java.io.File;
-import java.io.IOException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -31,7 +30,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
@@ -65,8 +63,8 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
   private static final Logger              LOGGER            = LoggerFactory.getLogger(AniDBMetadataProvider.class);
   private static final String              IMAGE_SERVER      = "http://img7.anidb.net/pics/anime/";
   private static MediaProviderInfo         providerInfo      = createMediaProviderInfo();
-  // @TODO: We should use tinyMediaManager's cache folder. How to get it?
-  private static AniDBCachedUrl            aniDBCachedUrl    = new AniDBCachedUrl(new File(System.getProperty("java.io.tmpdir")));
+  // use tmm's cache folder
+  private static AniDBCachedUrl            aniDBCachedUrl    = new AniDBCachedUrl(new File("cache"));
 
   private HashMap<String, List<AniDBShow>> showsForLookup    = new HashMap<>();
 
