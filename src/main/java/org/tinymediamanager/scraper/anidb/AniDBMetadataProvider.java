@@ -60,13 +60,13 @@ import net.xeoh.plugins.base.annotations.PluginImplementation;
  */
 @PluginImplementation
 public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArtworkProvider {
-  private static final Logger              LOGGER            = LoggerFactory.getLogger(AniDBMetadataProvider.class);
-  private static final String              IMAGE_SERVER      = "http://img7.anidb.net/pics/anime/";
-  private static MediaProviderInfo         providerInfo      = createMediaProviderInfo();
+  private static final Logger              LOGGER         = LoggerFactory.getLogger(AniDBMetadataProvider.class);
+  private static final String              IMAGE_SERVER   = "http://img7.anidb.net/pics/anime/";
+  private static MediaProviderInfo         providerInfo   = createMediaProviderInfo();
   // use tmm's cache folder
-  private static AniDBCachedUrl            aniDBCachedUrl    = new AniDBCachedUrl(new File("cache"));
+  private static AniDBCachedUrl            aniDBCachedUrl = new AniDBCachedUrl(new File("cache"));
 
-  private HashMap<String, List<AniDBShow>> showsForLookup    = new HashMap<>();
+  private HashMap<String, List<AniDBShow>> showsForLookup = new HashMap<>();
 
   private static MediaProviderInfo createMediaProviderInfo() {
     MediaProviderInfo providerInfo = new MediaProviderInfo("anidb", "aniDB",
@@ -571,7 +571,7 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
       }
     }
     catch (Exception e) {
-      LOGGER.error("error getting AniDB index");
+      LOGGER.error("error getting AniDB index", e);
     }
     finally {
       if (scanner != null) {
