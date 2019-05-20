@@ -15,7 +15,13 @@
  */
 package org.tinymediamanager.scraper.anidb;
 
-import java.io.File;
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -25,9 +31,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map.Entry;
-import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jsoup.nodes.Document;
@@ -64,7 +70,7 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
   private static final String              IMAGE_SERVER   = "http://img7.anidb.net/pics/anime/";
   private static MediaProviderInfo         providerInfo   = createMediaProviderInfo();
   // use tmm's cache folder
-  private static AniDBCachedUrl            aniDBCachedUrl = new AniDBCachedUrl(new File("cache"));
+  private static AniDBCachedUrl            aniDBCachedUrl = new AniDBCachedUrl();
 
   private HashMap<String, List<AniDBShow>> showsForLookup = new HashMap<>();
 
@@ -545,14 +551,16 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
     // 3=shorttitles (multiple per anime), 4=official title (one per
     // language)
     Pattern pattern = Pattern.compile("^(?!#)(\\d+)[|](\\d)[|]([\\w-]+)[|](.+)$");
-    Scanner scanner = null;
     try {
-      // scanner = new Scanner(new GZIPInputStream(animeList.getInputStream()));
-      // DecompressingHttpClient is decompressing the gz from animedb due to
-      // wrong http-server configuration
-      scanner = new Scanner(aniDBCachedUrl.getStringContents("http://anidb.net/api/anime-titles.dat.gz"));
-      while (scanner.hasNextLine()) {
-        Matcher matcher = pattern.matcher(scanner.nextLine());
+
+      Path titles = aniDBCachedUrl.getCachedFile("http://anidb.net/api/anime-titles.dat.gz");
+      InputStream fileStream = new FileInputStream(titles.toFile());
+      InputStream gzipStream = new GZIPInputStream(fileStream);
+      Reader decoder = new InputStreamReader(gzipStream, StandardCharsets.UTF_8);
+      BufferedReader br = new BufferedReader(decoder);
+
+      for (String line = br.readLine(); line != null; line = br.readLine()) {
+        Matcher matcher = pattern.matcher(line);
 
         if (matcher.matches()) {
           AniDBShow show = new AniDBShow();
@@ -569,18 +577,10 @@ public class AniDBMetadataProvider implements ITvShowMetadataProvider, IMediaArt
           shows.add(show);
         }
       }
+      br.close();
     }
     catch (Exception e) {
       LOGGER.error("error getting AniDB index", e);
-    }
-    finally {
-      if (scanner != null) {
-        try {
-          scanner.close();
-        }
-        catch (Exception ignored) {
-        }
-      }
     }
   }
 

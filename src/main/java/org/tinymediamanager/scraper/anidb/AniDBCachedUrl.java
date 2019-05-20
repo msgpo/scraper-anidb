@@ -1,19 +1,18 @@
 package org.tinymediamanager.scraper.anidb;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.zip.GZIPInputStream;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.tinymediamanager.scraper.http.Url;
 
 /**
  * @see <a href="https://wiki.anidb.net/w/HTTP_API_Definition">https://wiki.anidb.net/w/HTTP_API_Definition</a>
@@ -22,52 +21,62 @@ import org.jsoup.nodes.Document;
  *      banned. The same goes for request flooding. You should not request more than one page every two seconds. </quote>
  */
 public class AniDBCachedUrl {
-  static final private Charset UTF8          = Charset.forName("UTF-8");
-  static final private long    ONE_DAY_IN_MS = 24 * 3600 * 1000;
-  final private File           cacheDir;
+  private static final Logger LOGGER        = LoggerFactory.getLogger(AniDBCachedUrl.class);
+  static final private long   ONE_DAY_IN_MS = 24 * 3600 * 1000;
+  private static final Path   CACHE_DIR     = Paths.get("cache");
 
-  public AniDBCachedUrl(File cacheDir) {
-    this.cacheDir = cacheDir;
-    cacheDir.mkdirs();
+  public AniDBCachedUrl() {
   }
 
-  private File getUrlCacheFile(String url) {
-    return new File(cacheDir, "anidb." + md5(url.getBytes(UTF8)) + ".http.raw");
+  private Path getCachedFilename(String url) {
+    return CACHE_DIR.resolve(Paths.get("anidb." + md5(url.getBytes(StandardCharsets.UTF_8)) + ".http.raw"));
   }
 
-  private long getMillisecondsSinceModified(File file) {
-    if (file.exists()) {
-      return System.currentTimeMillis() - file.lastModified();
+  private long getMillisecondsSinceModified(Path file) {
+    if (Files.exists(file)) {
+      try {
+        return System.currentTimeMillis() - Files.getLastModifiedTime(file).toMillis();
+      }
+      catch (IOException e) {
+        LOGGER.error("Could not get file time!", e);
+        return System.currentTimeMillis();
+      }
     }
     else {
       return System.currentTimeMillis();
     }
   }
 
-  // Every request gets in there
-  private byte[] getRawContents(String url) throws Exception {
-    File cache = getUrlCacheFile(url);
+  public static String readFileToString(Path file) throws IOException {
+    byte[] fileArray = Files.readAllBytes(file);
+    return new String(fileArray, StandardCharsets.UTF_8);
+  }
+
+  /**
+   * returns cached file, or downloads fresh
+   * 
+   * @param url
+   * @return
+   * @throws Exception
+   */
+  public Path getCachedFile(String url) throws Exception {
+    Path cache = getCachedFilename(url);
     // Request only once per day
-    if (!cache.exists() && getMillisecondsSinceModified(cache) >= ONE_DAY_IN_MS * 2) {
+    if (!Files.exists(cache) && getMillisecondsSinceModified(cache) >= ONE_DAY_IN_MS * 2) {
       // Prevent doing more than one request per two seconds.
       waitToPreventFlood();
-      byte[] data = readAndCloseInputStream(new URL(url).openStream());
-      FileUtils.writeByteArrayToFile(cache, data);
+      Url u = new Url(url);
+      boolean ok = u.download(cache);
+      if (!ok) {
+        LOGGER.error("Error downloading cached file!");
+      }
       lastRequestEndedTime = System.currentTimeMillis();
     }
-    return FileUtils.readFileToByteArray(cache);
-  }
-
-  public byte[] getByteArrayContents(String url) throws Exception {
-    return getRawContents(url);
-  }
-
-  public String getStringContents(String url, Charset charset) throws Exception {
-    return new String(getByteArrayContents(url), charset);
+    return cache;
   }
 
   public String getStringContents(String url) throws Exception {
-    return getStringContents(url, UTF8);
+    return readFileToString(getCachedFile(url));
   }
 
   public Document getXmlContents(String url) throws Exception {
@@ -82,14 +91,6 @@ public class AniDBCachedUrl {
     if (timeSinceLastRequest < 2000) {
       Thread.sleep(2000 - timeSinceLastRequest);
     }
-  }
-
-  static private byte[] readAndCloseInputStream(InputStream inputStream) throws IOException {
-    final ByteArrayOutputStream bos = new ByteArrayOutputStream();
-    try (InputStream is = inputStream) {
-      IOUtils.copy(new GZIPInputStream(is), bos);
-    }
-    return bos.toByteArray();
   }
 
   static private String md5(byte[] data) {
